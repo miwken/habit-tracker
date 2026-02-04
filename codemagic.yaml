@@ -1,35 +1,128 @@
+# codemagic.yaml
 workflows:
-  ios-firebase-dist:
-    name: iOS to Firebase Distribution
+  ios-test-build:
+    name: iOS Test Build
     max_build_duration: 60
     instance_type: mac_mini_m1
     environment:
+      # Версии инструментов
+      flutter: "3.38.9"  # Конкретная версия
+      xcode: "16.0"      # Последняя стабильная
+      cocoapods: "1.15.2"
+      
+      # Переменные
       vars:
         BUNDLE_ID: "com.miwken.habittracker"
+        XCODE_WORKSPACE: "ios/Runner.xcworkspace"
+        XCODE_SCHEME: "Runner"
+        
+      # Группы для секретов (позже добавим)
       groups:
-        - firebase_credentials # позже добавим
+        # - firebase_credentials
+        # - app_store_credentials
+    
+    # Триггеры сборки
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: "main"
+          include: true
+          source: true
+    
+    # Скрипты
     scripts:
+      # 1. Настройка
       - name: Setup Flutter
         script: |
+          echo "Flutter version:"
           flutter --version
-          flutter pub get
-      - name: Build iOS
+          echo "Dart version:"
+          dart --version
+          
+      # 2. Зависимости
+      - name: Get dependencies
         script: |
-          flutter build ios --release --no-codesign
-      - name: Package IPA
+          flutter pub get
+          
+      # 3. Анализ кода
+      - name: Analyze code
+        script: |
+          flutter analyze
+          
+      # 4. Сборка iOS (Debug, без подписи)
+      - name: Build iOS Debug
+        script: |
+          flutter build ios --debug --no-codesign
+          
+      # 5. Создание IPA для тестирования
+      - name: Create test IPA
         script: |
           cd ios
-          xcodebuild -workspace Runner.xcworkspace \
-            -scheme Runner \
-            -sdk iphoneos \
-            -configuration Debug \
-            -allowProvisioningUpdates \
-            -archivePath /tmp/Runner.xcarchive \
-            archive
           
-          # Создаем IPA без подписи (для теста)
-          mkdir -p Payload
-          cp -r /tmp/Runner.xcarchive/Products/Applications/Runner.app Payload/
-          zip -r Runner.ipa Payload
+          # Создаем архив (Debug, не требует подписи)
+          xcodebuild clean archive \
+            -workspace "$XCODE_WORKSPACE" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Debug \
+            -archivePath build/Runner.xcarchive \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
+          
+          # Экспортируем в IPA
+          xcodebuild -exportArchive \
+            -archivePath build/Runner.xcarchive \
+            -exportPath build \
+            -exportOptionsPlist ../export_options_debug.plist \
+            CODE_SIGNING_ALLOWED=NO
+          
+          echo "IPA создан: build/Runner.ipa"
+          
+      # 6. Тест в симуляторе (если нужен)
+      - name: Test on Simulator
+        script: |
+          # Устанавливаем симулятор
+          xcrun simctl create "Test iPhone" "iPhone 15" 2> /dev/null || true
+          
+          # Запускаем сборку для симулятора
+          flutter build ios --simulator --debug
+          
+          # Устанавливаем на симулятор
+          # xcrun simctl install "Test iPhone" build/ios/iphonesimulator/Runner.app
+          # xcrun simctl launch "Test iPhone" "$BUNDLE_ID"
+    
+    # Артефакты для скачивания
     artifacts:
-      - ios/Runner.ipa
+      - build/ios/iphoneos/*.ipa
+      - build/ios/iphoneos/*.xcarchive
+      - build/ios/iphoneos/Runner.app
+      
+    # Публикация (позже настроим)
+    publishing:
+      email:
+        recipients:
+          - miwken@miwken  # ваш email
+        
+      # slack:
+      #   channel: '#builds'
+      #   notify_on_build_start: true
+        
+      scripts:
+        - name: Notify success
+          script: |
+            echo "✅ Сборка успешна!"
+            echo "Bundle ID: $BUNDLE_ID"
+            echo "IPA файл готов для тестирования"
+
+# Дополнительные настройки
+code_signing:
+  # ios_code_signing: ""  # позже добавим
+
+# Кэширование для ускорения
+cache:
+  cache_paths:
+    - ~/.pub-cache
+    - ios/Pods
+    - ~/Library/Caches/CocoaPods
