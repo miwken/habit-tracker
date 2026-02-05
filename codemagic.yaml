@@ -114,58 +114,12 @@ workflows:
             exit 1
           fi
       
-      # 7. Создание архива без подписи
-      - name: Create Xcode archive (unsigned)
+      # 7. Простая сборка - тут раньше была "Create Xcode archive (unsigned)"
+      - name: Simple iOS Build Only
         script: |
-          cd ios
-          
-          echo "Creating Xcode archive..."
-          
-          # Создаем ExportOptions для unsigned сборки
-          cat > ExportOptions-unsigned.plist << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>compileBitcode</key>
-              <false/>
-              <key>destination</key>
-              <string>export</string>
-              <key>method</key>
-              <string>development</string>
-              <key>signingCertificate</key>
-              <string></string>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>stripSwiftSymbols</key>
-              <true/>
-              <key>teamID</key>
-              <string></string>
-              <key>thinning</key>
-              <string>&lt;none&gt;</string>
-              <key>uploadBitcode</key>
-              <false/>
-              <key>uploadSymbols</key>
-              <true/>
-          </dict>
-          </plist>
-          EOF
-          
-          # Архивируем без подписи
-          xcodebuild clean archive \
-            -workspace "$XCODE_WORKSPACE" \
-            -scheme "$XCODE_SCHEME" \
-            -configuration Debug \
-            -archivePath "$HOME/runner.xcarchive" \
-            -destination 'generic/platform=iOS' \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            | xcpretty && exit ${PIPESTATUS[0]}
-          
-          echo "✅ Archive created: $HOME/runner.xcarchive"
+          echo "Building iOS app..."
+          flutter build ios --debug --no-codesign
+          echo "✅ Build complete"
       
       # 8. Финальные проверки
       - name: Verify artifacts
